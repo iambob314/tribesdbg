@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -15,7 +16,7 @@ var missingFuncPat = regexp.MustCompile(`^(.*): Unknown command\.$`)
 func handleLine(l string) {
 	switch {
 	case syntaxErrPat.MatchString(l), missingFuncPat.MatchString(l):
-		log.Println(l)
+		fmt.Println(l)
 	}
 }
 
@@ -36,11 +37,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Print("Waiting for Tribes...")
+	fmt.Println("Waiting for Tribes...")
 	if err := cmd.Wait(); err != nil {
 		log.Fatal(err)
 	}
-	log.Print("Tribes has closed, wrapping up...")
+	fmt.Println("Tribes has closed, wrapping up...")
 
 	f, err := os.Open("console.log")
 	if err != nil {
