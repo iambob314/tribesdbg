@@ -20,6 +20,10 @@ func handleLine(l string) {
 }
 
 func main() {
+	if len(os.Args) == 1 {
+		log.Fatalf("usage: tribesdbg.exe tribes-exe [args..]")
+	}
+
 	stat, err := os.Stat("console.log")
 	if err != nil {
 		log.Fatal(err)
@@ -27,7 +31,7 @@ func main() {
 	off := stat.Size()
 	_ = off
 
-	cmd := exec.Command("T1Vista.exe", os.Args[1:]...)
+	cmd := exec.Command(os.Args[1], os.Args[2:]...)
 	if err := cmd.Start(); err != nil {
 		log.Fatal(err)
 	}
