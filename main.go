@@ -1,91 +1,58 @@
 package main
 
 import (
-	"bytes"
-	"io"
+	"github.com/hpcloud/tail"
+	"gopkg.in/tomb.v1"
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
 func main() {
-	f, err := os.Open("console.log")
+	stat, err := os.Stat("console.log")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer f.Close()
+	off := stat.Size()
+	_ = off
 
-	if n, err := io.Copy(io.Discard, f); err != nil {
-		log.Fatal(err)
-	} else {
-		log.Printf("caught up console.log by %d bytes", n)
-	}
-
-	cmd := exec.Command("T1Vista.exe", os.Args...)
+	cmd := exec.Command("T1Vista.exe", os.Args[1:]...)
 	if err := cmd.Start(); err != nil {
 		log.Fatal(err)
 	}
 
-	stopCh := make(chan struct{})
-	lineCh := make(chan string, 1)
-	doneCh := make(chan struct{})
-	go func() {
-		defer close(lineCh)
-		buf := bytes.Buffer{}
-		skipNextNL := false
-
-		for {
-			if n, err := io.Copy(&buf, f); err != nil {
-				log.Fatal(err)
-			} else if n != 0 {
-				b := buf.Bytes()
-				skip := 0
-
-				for len(b) > 0 {
-					if skipNextNL && b[0] == '\n' {
-						skip++
-						b = b[1:]
-					}
-
-					idx := bytes.IndexAny(b, "\r\n")
-					if idx == -1 {
-						break
-					}
-					lineCh <- string(b[:idx])
-
-					if b[idx] == '\r' {
-						skipNextNL = true
-					}
-					skip += idx + 1
-					b = b[idx+1:]
-				}
-
-				buf.Next(skip)
-				continue
-			}
-
-			log.Println("wow")
-
-			select {
-			case <-stopCh:
-				return
-			case <-time.After(time.Second):
-				continue
-			}
-		}
-	}()
-
-	go func() {
-		defer close(doneCh)
-		for line := range lineCh {
-			log.Println(line)
-		}
-	}()
-
-	if err := cmd.Wait(); err != nil {
+	time.Sleep(3 * time.Second) // allow Tribes to start, or it gets cranky if we have the file open already
+	f, err := tail.TailFile("console.log", tail.Config{
+		Location: &tail.SeekInfo{Offset: off},
+		ReOpen:   true,
+		Follow:   true,
+		Poll:     true,
+	})
+	if err != nil {
 		log.Fatal(err)
 	}
-	close(stopCh)
-	<-doneCh
+	defer f.Cleanup()
+
+	log.Println("starting up...")
+
+	go func() {
+		log.Print("Waiting for Tribes...")
+		if err := cmd.Wait(); err != nil {
+			log.Fatal(err)
+		}
+		log.Print("Tribes has closed, wrapping up...")
+		_ = f.StopAtEOF()
+	}()
+
+	for line := range f.Lines {
+		log.Println("LINE", line.Time.Format("15:04:05"), strings.TrimSpace(line.Text), "ERROR", line.Err)
+		if err := f.Err(); err != nil && err != tomb.ErrStillAlive {
+			log.Fatal(err)
+		}
+	}
+	if err := f.Wait(); err != nil && err != tomb.ErrStillAlive {
+		log.Fatal(err)
+	}
 }
